@@ -54,6 +54,7 @@ def load_vms_from_yaml(config_path: str = "vms.yaml") -> List[Dict[str, str]]:
 # --- Основные настройки бота из .env ---
 BOT_TOKEN: str = get_env_var("BOT_TOKEN")
 ADMIN_ID: int = get_env_var_int("ADMIN_ID")
+TOPIC_ID: int = get_env_var_int("TOPIC_ID", default=None)
 CHECK_INTERVAL: int = get_env_var_int("CHECK_INTERVAL", 60)
 
 # --- Конфигурация виртуальных машин из vms.yaml ---

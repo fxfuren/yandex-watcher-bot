@@ -1,6 +1,6 @@
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from src.config import BOT_TOKEN, ADMIN_ID, VMS
+from src.config import BOT_TOKEN, ADMIN_ID, VMS, TOPIC_ID
 from src.client import trigger_vm_start
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
@@ -8,14 +8,16 @@ bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
 def check_admin(message) -> bool:
     """Проверяет, является ли пользователь админом."""
     if message.from_user.id != ADMIN_ID:
-        bot.reply_to(message, "⛔️ У вас нет доступа к этому боту.")
+        bot.reply_to(message, "⛔️ У вас нет доступа к этому боту.",
+                     message_thread_id=TOPIC_ID if TOPIC_ID else None)
         return False
     return True
 
 def send_alert(message: str):
     """Отправляет алерт администратору."""
     try:
-        bot.send_message(ADMIN_ID, message)
+        bot.send_message(ADMIN_ID, message,
+                         message_thread_id=TOPIC_ID if TOPIC_ID else None)
     except Exception as e:
         # Логируем ошибку, если не удалось отправить сообщение
         print(f"CRITICAL: Failed to send alert to admin: {e}")
@@ -33,15 +35,19 @@ def create_vm_keyboard() -> InlineKeyboardMarkup:
 def handle_start(message):
     if not check_admin(message): return
     
+    thread_id = TOPIC_ID if TOPIC_ID else None
+    
     if not VMS:
-        bot.reply_to(message, "⚠️ **Конфигурация пуста!**\n\nНе найдено ни одной виртуальной машины. Пожалуйста, настройте переменную окружения `VM_CONFIG` и перезапустите бота.")
+        bot.reply_to(message, "⚠️ **Конфигурация пуста!**\n\nНе найдено ни одной виртуальной машины. Пожалуйста, настройте переменную окружения `VM_CONFIG` и перезапустите бота.",
+                     message_thread_id=thread_id)
         return
 
     bot.reply_to(
         message,
         "🤖 *Yandex VM Watchdog*\n\n"
         "Выберите машину, чтобы проверить ее статус или отправить команду на запуск.",
-        reply_markup=create_vm_keyboard()
+        reply_markup=create_vm_keyboard(),
+        message_thread_id=thread_id
     )
 
 @bot.message_handler(commands=['ping'])
