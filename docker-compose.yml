@@ -1,0 +1,9 @@
+services:
+  watchdog:
+    build: .
+    container_name: yandex-watcher-bot
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - /etc/localtime:/etc/localtime:ro

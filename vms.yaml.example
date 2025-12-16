@@ -1,0 +1,9 @@
+# Список виртуальных машин для мониторинга
+# Каждая машина должна иметь:
+#   name: Имя, которое будет отображаться в боте
+#   url:  URL-адрес API-шлюза для запуска этой машины
+vms:
+  - name: "my-first-vm"
+    url: "https://d5...apigw.yandexcloud.net/start-vm-1"
+  - name: "my-second-vm"
+    url: "https://d5...apigw.yandexcloud.net/start-vm-2"

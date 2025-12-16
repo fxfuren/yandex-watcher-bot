@@ -1,0 +1,91 @@
+# Created by https://www.toptal.com/developers/gitignore/api/windows,linux,macos,python,django,flask,pycharm,vscode
+# Edit at https://www.toptal.com/developers/gitignore?templates=windows,linux,macos,python,django,flask,pycharm,vscode
+
+### Django ###
+# Byte-code files
+*.pyc
+__pycache__/
+
+# Migrations
+*/migrations/*.py
+!*/migrations/__init__.py
+
+# Media files
+media/
+
+# Local settings
+*.example.env
+.env
+
+### Flask ###
+instance/
+.webassets-cache
+
+### Linux ###
+*~
+
+# KDE directory preferences
+.directory
+
+# Linux trash folder which might appear on SMB mounts
+.Trash-*
+
+### macOS ###
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Icon must go after the dotFfinderIgnore
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotbackup
+
+# specific VScode files
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.history/
+
+### PyCharm ###
+# Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, ReSharper
+# https://www.jetbrains.com/help/idea/project-and-ide-settings.html
+
+# User-specific stuff
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/dictionaries
+.idea/vcs.xml
+.idea/jsLibraryMappings.xml
+.idea/remote-mappings.xml
+.idea/shelf
+
+# Generated files
+.idea/modules.xml
+.idea/libraries
+
+# Python-specific
+.idea/inspectionProfiles/profiles_settings.xml
+.idea/misc.xml
+
+# OS-specific stuff
+.idea/encodings.xml
+.idea/copyright/profiles_settings.xml
+.idea/scopes/scope_settings.xml
+.idea/vcs.xml
+.idea/templateLanguages.xml
+.idea/markdown.xml
+
+## Plugin-related files ##
+
+# IntelliJ
+
+# Local VM configuration
+vms.yaml
+vms.json
+vms.yml
