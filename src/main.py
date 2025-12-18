@@ -43,6 +43,16 @@ def watchdog_loop():
                     log_msg = f"🚨 СБОЙ: ВМ *{vm_name}* недоступна.\n\n{text}"
                     logging.error(log_msg)
                     send_alert(log_msg)
+
+                    # При первом обнаружении простоя пробуем запустить ВМ сразу, не дожидаясь следующего цикла
+                    restart_success, restart_text = trigger_vm_start(vm_url)
+                    if restart_success:
+                        restart_msg = f"🚀 Автозапуск: ВМ *{vm_name}* запускается.\n\n{restart_text}"
+                        logging.info(restart_msg)
+                    else:
+                        restart_msg = f"⚠️ Не удалось автоматически запустить ВМ *{vm_name}*.\n\n{restart_text}"
+                        logging.warning(restart_msg)
+                    send_alert(restart_msg)
                 
                 # Обновляем состояние ВМ в словаре
                 vm_states[vm_name] = is_currently_up
