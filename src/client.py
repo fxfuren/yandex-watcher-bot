@@ -10,7 +10,7 @@ def trigger_vm_start(url: str) -> tuple[bool, str, bool]:
 
         # 1. Сервер лежал и начал включаться
         if response.status_code == 200:
-            return True, "🚀 Сервер был выключен. Команда на старт отправлена успешно.", True
+            return True, "", True
 
         # 2. Обработка ответа от Яндекса
         try:
@@ -20,7 +20,7 @@ def trigger_vm_start(url: str) -> tuple[bool, str, bool]:
 
             # Код 9 + RUNNING = Всё хорошо
             if code == 9 and "RUNNING" in message:
-                return True, "✅ Сервер уже работает.", False
+                return True, "", False
 
             return False, f"⚠️ Ошибка API ({response.status_code}): {message}", False
 
