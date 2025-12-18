@@ -28,9 +28,18 @@ def watchdog_loop():
             for vm in VMS:
                 vm_name = vm['name']
                 vm_url = vm['url']
-                
-                is_currently_up, text = trigger_vm_start(vm_url)
+
                 last_known_is_up = vm_states.get(vm_name, True) # По умолчанию считаем, что ВМ в порядке
+                is_currently_up, text, start_initiated = trigger_vm_start(vm_url)
+
+                if start_initiated:
+                    if last_known_is_up:
+                        restart_msg = f"🚀 Автозапуск: ВМ *{vm_name}* запускается.\n\n{text}"
+                        logging.info(restart_msg)
+                        send_alert(restart_msg)
+
+                    vm_states[vm_name] = False
+                    continue
 
                 # Случай 1: ВМ была недоступна и восстановилась (или была только что запущена)
                 if is_currently_up and not last_known_is_up:
@@ -51,7 +60,7 @@ def watchdog_loop():
                         send_alert(log_msg)
 
                         # При первом обнаружении простоя пробуем запустить ВМ сразу, не дожидаясь следующего цикла
-                        restart_success, restart_text = trigger_vm_start(vm_url)
+                        restart_success, restart_text, _ = trigger_vm_start(vm_url)
                         if restart_success:
                             restart_msg = f"🚀 Автозапуск: ВМ *{vm_name}* запускается.\n\n{restart_text}"
                             logging.info(restart_msg)

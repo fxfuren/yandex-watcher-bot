@@ -66,7 +66,7 @@ def handle_vm_callback(call):
     if vm_index_str == "all":
         results = []
         for vm in VMS:
-            success, text = trigger_vm_start(vm['url'])
+            success, text, _ = trigger_vm_start(vm['url'])
             status_icon = "✅" if success else "❌"
             results.append(f"*{vm['name']}*: {status_icon} {text}")
         
@@ -77,7 +77,7 @@ def handle_vm_callback(call):
             vm_index = int(vm_index_str)
             if 0 <= vm_index < len(VMS):
                 vm = VMS[vm_index]
-                success, text = trigger_vm_start(vm['url'])
+                success, text, _ = trigger_vm_start(vm['url'])
                 status_icon = "✅" if success else "❌"
                 bot.send_message(call.message.chat.id, f"*{vm['name']}*: {status_icon} {text}")
             else:
