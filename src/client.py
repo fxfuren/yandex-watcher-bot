@@ -1,23 +1,23 @@
 import requests
-import subprocess
+import socket
 import platform
 import logging
 from typing import Optional
 
-def ping_host(host: str) -> bool:
+def ping_host(host: str, port: int = 22, timeout: int = 3) -> bool:
     """
-    Пингует хост для проверки доступности.
+    Проверяет доступность хоста, пытаясь подключиться к TCP-порту.
+    По умолчанию проверяет порт 22 (SSH).
     """
-    param = '-n' if platform.system().lower() == 'windows' else '-c'
-    command = ['ping', param, '1', host]
-    
     try:
-        subprocess.check_call(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return True
-    except subprocess.CalledProcessError:
+        # Пытаемся установить соединение
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except (socket.timeout, socket.error):
+        # Если таймаут или ошибка соединения — хост недоступен
         return False
     except Exception as e:
-        logging.error(f"Ошибка при пинге {host}: {e}")
+        logging.error(f"Ошибка при проверке порта {host}:{port}: {e}")
         return False
 
 def get_vm_ip(base_url: str) -> Optional[str]:
