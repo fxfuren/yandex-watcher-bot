@@ -13,6 +13,12 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
+def clean_for_log(text: str) -> str:
+    """Убирает переносы строк для красивого лога."""
+    if not text:
+        return ""
+    return text.replace('\n', ' ').replace('\r', '').strip()
+
 def watchdog_loop():
     """Фоновый процесс для проверки ВМ."""
     if not VMS:
@@ -35,7 +41,6 @@ def watchdog_loop():
                 vm_name = vm['name']
                 vm_url = vm['url']
                 
-                # Читаем IP
                 known_ip = vm.get('ip') 
                 
                 last_known_is_up = vm_states.get(vm_name, True)
@@ -69,10 +74,10 @@ def watchdog_loop():
                     if start_initiated:
                         base_msg = f"🚀 Автозапуск: ВМ *{vm_name}* запускается через API."
                         
-                        # В ЛОГ: пишем в одну строку через разделитель " | "
-                        logging.info(f"{base_msg} | {text}")
+                        # В ЛОГ: чистим от переносов
+                        logging.info(f"{base_msg} | {clean_for_log(text)}")
                         
-                        # В ТЕЛЕГРАМ: пишем с переносами строк
+                        # В ТЕЛЕГРАМ: шлем как есть (с переносами)
                         send_alert(f"{base_msg}\n\n{text}")
                         
                         vm_states[vm_name] = False 
@@ -91,19 +96,13 @@ def watchdog_loop():
                 # 1. Восстановление
                 if is_currently_up and not last_known_is_up:
                     base_msg = f"✅ ВОССТАНОВЛЕНИЕ: ВМ *{vm_name}* снова в строю."
-                    
-                    # Лог одной строкой
-                    logging.info(f"{base_msg} | {check_details}")
-                    # Алерт с переносами
+                    logging.info(f"{base_msg} | {clean_for_log(check_details)}")
                     send_alert(f"{base_msg}\n\n{check_details}")
                 
                 # 2. Сбой
                 elif not is_currently_up and last_known_is_up:
                     base_msg = f"🚨 СБОЙ: ВМ *{vm_name}* недоступна."
-                    
-                    # Лог одной строкой
-                    logging.error(f"{base_msg} | {check_details}")
-                    # Алерт с переносами
+                    logging.error(f"{base_msg} | {clean_for_log(check_details)}")
                     send_alert(f"{base_msg}\n\n{check_details}")
 
                 vm_states[vm_name] = is_currently_up
@@ -112,7 +111,8 @@ def watchdog_loop():
                 update_vms_file()
 
         except Exception as e:
-            logging.critical(f"Критическая ошибка в цикле watchdog: {e}", exc_info=True)
+            err_text = clean_for_log(str(e))
+            logging.critical(f"Критическая ошибка в цикле watchdog: {err_text}", exc_info=True)
         
         time.sleep(CHECK_INTERVAL)
 
@@ -124,4 +124,4 @@ if __name__ == "__main__":
     try:
         bot.infinity_polling(timeout=60, logger_level=logging.WARNING)
     except Exception as e:
-        logging.critical(f"Бот остановлен: {e}", exc_info=True)
+        logging.critical(f"Бот остановлен: {clean_for_log(str(e))}", exc_info=True)
