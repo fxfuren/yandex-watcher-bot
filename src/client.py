@@ -1,31 +1,84 @@
 import requests
+import subprocess
+import platform
+import logging
+from typing import Optional
 
-def trigger_vm_start(url: str) -> tuple[bool, str, bool]:
+def ping_host(host: str) -> bool:
     """
-    Делает запрос к шлюзу по указанному URL.
-    Возвращает: (Успех_операции, Сообщение_для_лога, Был_ли_отправлен_запрос_на_запуск)
+    Пингует хост для проверки доступности.
     """
+    param = '-n' if platform.system().lower() == 'windows' else '-c'
+    command = ['ping', param, '1', host]
+    
     try:
-        response = requests.post(url, timeout=10)
+        subprocess.check_call(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except subprocess.CalledProcessError:
+        return False
+    except Exception as e:
+        logging.error(f"Ошибка при пинге {host}: {e}")
+        return False
 
-        # 1. Сервер лежал и начал включаться
+def get_vm_ip(base_url: str) -> Optional[str]:
+    """
+    Пытается получить IP адрес ВМ.
+    Добавляет /info к базовому URL.
+    """
+    # Формируем URL для получения инфо
+    info_url = f"{base_url.rstrip('/')}/info"
+    
+    try:
+        response = requests.get(info_url, timeout=5)
         if response.status_code == 200:
-            return True, "", True
+            data = response.json()
+            
+            interfaces = data.get("networkInterfaces", [])
+            if interfaces:
+                primary = interfaces[0].get("primaryV4Address", {})
+                
+                # Приоритет публичному IP
+                public_ip = primary.get("oneToOneNat", {}).get("address")
+                if public_ip:
+                    return public_ip
+                
+                internal_ip = primary.get("address")
+                if internal_ip:
+                    return internal_ip
+    except Exception as e:
+        logging.warning(f"Не удалось получить IP через {info_url}: {e}")
+    
+    return None
 
-        # 2. Обработка ответа от Яндекса
+def trigger_vm_start(base_url: str) -> tuple[bool, str, bool, Optional[str]]:
+    """
+    Делает запрос к шлюзу (добавляет /start).
+    """
+    # Формируем URL для запуска
+    start_url = f"{base_url.rstrip('/')}/start"
+    
+    ip_address = None
+    try:
+        response = requests.post(start_url, timeout=10)
+
+        if response.status_code == 200:
+            return True, "", True, None
+
         try:
             data = response.json()
             code = data.get("code")
             message = data.get("message", "")
+            
+            if "ip" in data:
+                ip_address = data["ip"]
 
-            # Код 9 + RUNNING = Всё хорошо
             if code == 9 and "RUNNING" in message:
-                return True, "", False
+                return True, "", False, ip_address
 
-            return False, f"⚠️ Ошибка API ({response.status_code}): {message}", False
+            return False, f"⚠️ Ошибка API ({response.status_code}): {message}", False, None
 
         except ValueError:
-            return False, f"❌ Критическая ошибка шлюза: {response.text[:100]}", False
+            return False, f"❌ Критическая ошибка шлюза: {response.text[:100]}", False, None
 
     except requests.RequestException as e:
-        return False, f"🚨 Ошибка сети: {e}", False
+        return False, f"🚨 Ошибка сети: {e}", False, None

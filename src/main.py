@@ -1,95 +1,115 @@
 import time
 import threading
 import logging
-import requests
 import sys
-from src.config import CHECK_INTERVAL, VMS
-from src.client import trigger_vm_start
+import requests
+from src.config import CHECK_INTERVAL, VMS, update_vms_file
+from src.client import trigger_vm_start, ping_host, get_vm_ip
 from src.bot import bot, send_alert
 
-# Настройка логов, чтобы видеть их в docker logs
+# Настройка логов
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-
-def compose_message(base: str, details: str) -> str:
-    """Возвращает строку с деталями только при их наличии."""
-    details = details.strip()
-    return base if not details else f"{base}\n\n{details}"
-
 def watchdog_loop():
-    """Фоновый процесс для периодической проверки состояния всех ВМ."""
+    """Фоновый процесс для проверки ВМ."""
     if not VMS:
         logging.warning("Watchdog не запускается: список ВМ пуст.")
         return
         
-    logging.info(f"👀 Watchdog запущен. Интервал: {CHECK_INTERVAL} сек. Машин в списке: {len(VMS)}")
+    logging.info(f"👀 Watchdog запущен. Интервал: {CHECK_INTERVAL} сек. Машин: {len(VMS)}")
     
-    vm_states = {} # Словарь для хранения последнего состояния ВМ: { "vm_name": True (is_up) }
+    vm_states = {} 
+    
+    # Инициализация состояний
+    for vm in VMS:
+        vm_states[vm['name']] = True
 
     while True:
         try:
+            config_changed = False 
+
             for vm in VMS:
                 vm_name = vm['name']
                 vm_url = vm['url']
-
-                last_known_is_up = vm_states.get(vm_name, True) # По умолчанию считаем, что ВМ в порядке
-                is_currently_up, text, start_initiated = trigger_vm_start(vm_url)
-
-                if start_initiated:
-                    if last_known_is_up:
-                        restart_msg = compose_message(
-                            f"🚀 Автозапуск: ВМ *{vm_name}* запускается.", text
-                        )
-                        logging.info(restart_msg)
-                        send_alert(restart_msg)
-
-                    vm_states[vm_name] = False
-                    continue
-
-                # Случай 1: ВМ была недоступна и восстановилась (или была только что запущена)
-                if is_currently_up and not last_known_is_up:
-                    log_msg = compose_message(
-                        f"✅ ВОССТАНОВЛЕНИЕ: ВМ *{vm_name}* снова в строю.", text
-                    )
-                    logging.warning(log_msg)
-                    send_alert(log_msg)
                 
-                # Случай 2: ВМ была доступна и упала
-                elif not is_currently_up and last_known_is_up:
-                    # Если шлюз сообщает, что ВМ уже в состоянии STARTING, не дублируем запуск
-                    if "STARTING" in text.upper():
-                        log_msg = compose_message(
-                            f"ℹ️ ВМ *{vm_name}* уже находится в процессе запуска. Повторный старт не требуется.",
-                            text,
-                        )
-                        logging.info(log_msg)
-                        send_alert(log_msg)
+                # Читаем IP
+                known_ip = vm.get('ip') 
+                
+                last_known_is_up = vm_states.get(vm_name, True)
+                is_currently_up = False
+                check_details = ""
+                
+                # 1. Пинг
+                ping_success = False
+                if known_ip:
+                    ping_success = ping_host(known_ip)
+                
+                if ping_success:
+                    is_currently_up = True
+                    if not last_known_is_up:
+                        check_details = f"Машина снова доступна по IP {known_ip} (Ping OK)"
+                else:
+                    # 2. API (Check/Start)
+                    success_api, text, start_initiated, new_ip = trigger_vm_start(vm_url)
+                    
+                    if success_api and not new_ip and not known_ip:
+                        new_ip = get_vm_ip(vm_url)
+                    
+                    # --- СОХРАНЕНИЕ IP ---
+                    if new_ip and new_ip != known_ip:
+                        vm['ip'] = new_ip 
+                        config_changed = True
+                        logging.info(f"Обнаружен IP для {vm_name}: {new_ip}")
+                        known_ip = new_ip
+
+                    # --- ЛОГИКА ЗАПУСКА ---
+                    if start_initiated:
+                        base_msg = f"🚀 Автозапуск: ВМ *{vm_name}* запускается через API."
+                        
+                        # В ЛОГ: пишем в одну строку через разделитель " | "
+                        logging.info(f"{base_msg} | {text}")
+                        
+                        # В ТЕЛЕГРАМ: пишем с переносами строк
+                        send_alert(f"{base_msg}\n\n{text}")
+                        
+                        vm_states[vm_name] = False 
+                        continue 
+                        
+                    elif success_api:
+                        is_currently_up = True
+                        if not last_known_is_up:
+                             check_details = "Статус API: RUNNING. (Ping не прошел, но API отвечает)"
                     else:
-                        log_msg = compose_message(
-                            f"🚨 СБОЙ: ВМ *{vm_name}* недоступна.", text
-                        )
-                        logging.error(log_msg)
-                        send_alert(log_msg)
+                        is_currently_up = False
+                        check_details = text
 
-                        # При первом обнаружении простоя пробуем запустить ВМ сразу, не дожидаясь следующего цикла
-                        restart_success, restart_text, _ = trigger_vm_start(vm_url)
-                        if restart_success:
-                            restart_msg = compose_message(
-                                f"🚀 Автозапуск: ВМ *{vm_name}* запускается.", restart_text
-                            )
-                            logging.info(restart_msg)
-                        else:
-                            restart_msg = compose_message(
-                                f"⚠️ Не удалось автоматически запустить ВМ *{vm_name}*.", restart_text
-                            )
-                            logging.warning(restart_msg)
-                        send_alert(restart_msg)
+                # --- ЛОГИКА УВЕДОМЛЕНИЙ ---
                 
-                # Обновляем состояние ВМ в словаре
+                # 1. Восстановление
+                if is_currently_up and not last_known_is_up:
+                    base_msg = f"✅ ВОССТАНОВЛЕНИЕ: ВМ *{vm_name}* снова в строю."
+                    
+                    # Лог одной строкой
+                    logging.info(f"{base_msg} | {check_details}")
+                    # Алерт с переносами
+                    send_alert(f"{base_msg}\n\n{check_details}")
+                
+                # 2. Сбой
+                elif not is_currently_up and last_known_is_up:
+                    base_msg = f"🚨 СБОЙ: ВМ *{vm_name}* недоступна."
+                    
+                    # Лог одной строкой
+                    logging.error(f"{base_msg} | {check_details}")
+                    # Алерт с переносами
+                    send_alert(f"{base_msg}\n\n{check_details}")
+
                 vm_states[vm_name] = is_currently_up
+
+            if config_changed:
+                update_vms_file()
 
         except Exception as e:
             logging.critical(f"Критическая ошибка в цикле watchdog: {e}", exc_info=True)
@@ -97,22 +117,11 @@ def watchdog_loop():
         time.sleep(CHECK_INTERVAL)
 
 if __name__ == "__main__":
-    # Запуск фонового потока для мониторинга
     watchdog_thread = threading.Thread(target=watchdog_loop, daemon=True)
     watchdog_thread.start()
 
-    # Запуск бота
-    logging.info("🤖 Бот запущен и готов к работе.")
+    logging.info("🤖 Бот запущен...")
     try:
-        # bot.polling() из bot.py теперь используется для локального запуска.
-        # Для Docker используем infinity_polling.
         bot.infinity_polling(timeout=60, logger_level=logging.WARNING)
-    except requests.exceptions.ConnectionError as e:
-        logging.error("="*50)
-        logging.error("❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось подключиться к серверам Telegram.")
-        logging.error("Пожалуйста, проверьте ваше интернет-соединение и настройки DNS/файрвола.")
-        logging.error(f"Подробности: {e.args[0]}")
-        logging.error("="*50)
-        sys.exit(1)
     except Exception as e:
-        logging.critical(f"Бот остановлен с критической ошибкой: {e}", exc_info=True)
+        logging.critical(f"Бот остановлен: {e}", exc_info=True)

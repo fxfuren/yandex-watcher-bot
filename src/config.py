@@ -1,14 +1,20 @@
 import os
 import sys
-import yaml
 from dotenv import load_dotenv
 from typing import List, Dict
+from ruamel.yaml import YAML
 
-# Загружаем переменные из .env файла
 load_dotenv()
 
+CONFIG_PATH = "vms.yaml"
+
+# Настройка парсера YAML
+yaml = YAML()
+yaml.preserve_quotes = True
+yaml.indent(mapping=2, sequence=4, offset=2)
+# -------------------------
+
 def get_env_var(name: str, default: str = None) -> str:
-    """Получает переменную окружения или вызывает ошибку, если она не найдена."""
     value = os.getenv(name, default)
     if value is None:
         print(f"❌ ОШИБКА: Не найдена обязательная переменная окружения: {name}")
@@ -16,49 +22,46 @@ def get_env_var(name: str, default: str = None) -> str:
     return value
 
 def get_env_var_int(name: str, default: int = None) -> int:
-    """Получает числовую переменную окружения."""
     try:
         return int(get_env_var(name, str(default)))
     except (ValueError, TypeError):
         print(f"❌ ОШИБКА: Переменная окружения {name} должна быть целым числом.")
         sys.exit(1)
 
-def load_vms_from_yaml(config_path: str = "vms.yaml") -> List[Dict[str, str]]:
-    """Загружает список ВМ из YAML-файла."""
+# --- Глобальная переменная для хранения всей структуры YAML ---
+_config_data = None
+
+def load_config():
+    """Загружает конфиг целиком."""
+    global _config_data
     try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            if not data or 'vms' not in data:
-                print(f"⚠️  ПРЕДУПРЕЖДЕНИЕ: 'vms' не найден в {config_path}. Мониторинг ВМ не будет работать.")
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            _config_data = yaml.load(f)
+            if not _config_data or 'vms' not in _config_data:
+                print(f"⚠️ ПРЕДУПРЕЖДЕНИЕ: Структура 'vms' не найдена в {CONFIG_PATH}")
                 return []
-            
-            vms = data['vms']
-            if not isinstance(vms, list):
-                print(f"❌ ОШИБКА: 'vms' в файле {config_path} должен быть списком.")
-                return []
-
-            # Валидация списка ВМ
-            for vm in vms:
-                if not isinstance(vm, dict) or "name" not in vm or "url" not in vm:
-                    print(f"❌ ОШИБКА: Неверный формат элемента в списке 'vms'. Каждый элемент должен содержать 'name' и 'url'.")
-                    continue # Пропускаем невалидную запись
-            return vms
-
+            return _config_data['vms']
     except FileNotFoundError:
-        print(f"ℹ️  ИНФО: Файл {config_path} не найден. Мониторинг ВМ отключен.")
+        print(f"ℹ️ ИНФО: Файл {CONFIG_PATH} не найден.")
         return []
-    except yaml.YAMLError as e:
-        print(f"❌ ОШИБКА: Не удалось разобрать YAML из файла {config_path}: {e}")
+    except Exception as e:
+        print(f"❌ ОШИБКА YAML: {e}")
         return []
 
-# --- Основные настройки бота из .env ---
+def update_vms_file():
+    """Сохраняет текущее состояние _config_data в файл, сохраняя комментарии."""
+    if _config_data:
+        try:
+            with open(CONFIG_PATH, 'w', encoding="utf-8") as f:
+                yaml.dump(_config_data, f)
+        except Exception as e:
+            print(f"❌ ОШИБКА сохранения конфига: {e}")
+
+# --- Инициализация ---
 BOT_TOKEN: str = get_env_var("BOT_TOKEN")
 ADMIN_ID: int = get_env_var_int("ADMIN_ID")
 TOPIC_ID: int = get_env_var_int("TOPIC_ID", default=None)
 CHECK_INTERVAL: int = get_env_var_int("CHECK_INTERVAL", 60)
 
-# --- Конфигурация виртуальных машин из vms.yaml ---
-VMS: List[Dict[str, str]] = load_vms_from_yaml()
-
-if not VMS:
-    print("⚠️ ПРЕДУПРЕЖДЕНИЕ: Список виртуальных машин пуст. Бот будет работать без мониторинга ВМ.")
+# Загружаем VMS при старте
+VMS = load_config()
