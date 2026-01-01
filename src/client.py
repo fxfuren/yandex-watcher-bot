@@ -1,7 +1,7 @@
 import requests
 import socket
 import platform
-import logging
+from loguru import logger
 from typing import Optional
 
 def ping_host(host: str, port: int = 22, timeout: int = 3) -> bool:
@@ -17,7 +17,7 @@ def ping_host(host: str, port: int = 22, timeout: int = 3) -> bool:
         # Если таймаут или ошибка соединения — хост недоступен
         return False
     except Exception as e:
-        logging.error(f"Ошибка при проверке порта {host}:{port}: {e}")
+        logger.error(f"Ошибка при проверке порта {host}:{port}: {e}")
         return False
 
 def get_vm_ip(base_url: str) -> Optional[str]:
@@ -46,7 +46,7 @@ def get_vm_ip(base_url: str) -> Optional[str]:
                 if internal_ip:
                     return internal_ip
     except Exception as e:
-        logging.warning(f"Не удалось получить IP через {info_url}: {e}")
+        logger.warning(f"Не удалось получить IP через {info_url}: {e}")
     
     return None
 
