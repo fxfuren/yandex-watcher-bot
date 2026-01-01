@@ -1,26 +1,44 @@
 import telebot
+from loguru import logger
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from src.config import BOT_TOKEN, ADMIN_ID, VMS, TOPIC_ID
 from src.client import trigger_vm_start
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
 
-def check_admin(message) -> bool:
+def check_admin(message_or_call) -> bool:
     """Проверяет, является ли пользователь админом."""
-    if message.from_user.id != ADMIN_ID:
-        bot.reply_to(message, "⛔️ У вас нет доступа к этому боту.",
-                     message_thread_id=TOPIC_ID if TOPIC_ID else None)
+    # Определяем тип объекта (message или callback_query)
+    user_id = None
+    chat_id = None
+    
+    if hasattr(message_or_call, 'from_user'):
+        # Это message
+        user_id = message_or_call.from_user.id
+        chat_id = message_or_call.chat.id
+    elif hasattr(message_or_call, 'message'):
+        # Это callback_query
+        user_id = message_or_call.from_user.id
+        chat_id = message_or_call.message.chat.id
+    
+    if user_id != ADMIN_ID:
+        try:
+            bot.send_message(chat_id, "⛔️ У вас нет доступа к этому боту.",
+                           message_thread_id=TOPIC_ID if TOPIC_ID else None)
+        except Exception as e:
+            logger.error(f"Ошибка при отправке сообщения об отказе в доступе: {e}")
         return False
     return True
 
 def send_alert(message: str):
     """Отправляет алерт администратору."""
     try:
-        bot.send_message(ADMIN_ID, message,
+        bot.send_message(ADMIN_ID, message, parse_mode="Markdown",
                          message_thread_id=TOPIC_ID if TOPIC_ID else None)
+        logger.debug(f"Алерт отправлен админу: {message[:50]}...")
     except Exception as e:
-        # Логируем ошибку, если не удалось отправить сообщение
-        print(f"CRITICAL: Failed to send alert to admin: {e}")
+        logger.critical(f"Не удалось отправить алерт админу: {e}")
+        logger.exception(e)
 
 def create_vm_keyboard() -> InlineKeyboardMarkup:
     """Создает клавиатуру со списком ВМ."""
@@ -35,60 +53,96 @@ def create_vm_keyboard() -> InlineKeyboardMarkup:
 def handle_start(message):
     if not check_admin(message): return
     
+    logger.info(f"Команда /start от пользователя {message.from_user.id}")
     thread_id = TOPIC_ID if TOPIC_ID else None
     
-    if not VMS:
-        bot.reply_to(message, "⚠️ **Конфигурация пуста!**\n\nНе найдено ни одной виртуальной машины. Пожалуйста, настройте переменную окружения `VM_CONFIG` и перезапустите бота.",
-                     message_thread_id=thread_id)
-        return
+    try:
+        if not VMS:
+            bot.reply_to(message, "⚠️ **Конфигурация пуста!**\n\nНе найдено ни одной виртуальной машины. Пожалуйста, настройте переменную окружения `VM_CONFIG` и перезапустите бота.",
+                         message_thread_id=thread_id)
+            return
 
-    bot.reply_to(
-        message,
-        "🤖 *Yandex VM Watchdog*\n\n"
-        "Выберите машину, чтобы проверить ее статус или отправить команду на запуск.",
-        reply_markup=create_vm_keyboard(),
-        message_thread_id=thread_id
-    )
+        bot.reply_to(
+            message,
+            "🤖 *Yandex VM Watchdog*\n\n"
+            "Выберите машину, чтобы проверить ее статус или отправить команду на запуск.",
+            reply_markup=create_vm_keyboard(),
+            message_thread_id=thread_id
+        )
+    except Exception as e:
+        logger.error(f"Ошибка в handle_start: {e}")
+        logger.exception(e)
 
 @bot.message_handler(commands=['ping'])
 def handle_ping(message):
     if not check_admin(message): return
-    bot.reply_to(message, "🏓 Понг!")
+    
+    logger.info(f"Команда /ping от пользователя {message.from_user.id}")
+    try:
+        bot.reply_to(message, "🏓 Понг!", message_thread_id=TOPIC_ID if TOPIC_ID else None)
+    except Exception as e:
+        logger.error(f"Ошибка в handle_ping: {e}")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('vm_'))
 def handle_vm_callback(call):
     if not check_admin(call): return
 
     vm_index_str = call.data.split('_')[1]
+    logger.info(f"Callback от пользователя {call.from_user.id}: {call.data}")
     
-    bot.answer_callback_query(call.id, "🚀 Отправляю команду...")
-    
-    if vm_index_str == "all":
-        results = []
-        for vm in VMS:
-            success, text, _, _ = trigger_vm_start(vm['url'])
-            status_icon = "✅" if success else "❌"
-            results.append(f"*{vm['name']}*: {status_icon} {text}")
+    try:
+        bot.answer_callback_query(call.id, "🚀 Отправляю команду...")
+        thread_id = TOPIC_ID if TOPIC_ID else None
         
-        final_message = "\n".join(results)
-        bot.send_message(call.message.chat.id, f"📡 *Результаты проверки всех машин:*\n\n{final_message}")
-    else:
-        try:
+        if vm_index_str == "all":
+            results = []
+            for vm in VMS:
+                success, text, start_initiated, _ = trigger_vm_start(vm['url'])
+                status_icon = "✅" if success else "❌"
+                status_text = text if text else ("Запускается..." if start_initiated else "OK")
+                results.append(f"*{vm['name']}*: {status_icon} {status_text}")
+            
+            final_message = "\n\n".join(results)
+            bot.send_message(call.message.chat.id, 
+                           f"📡 *Результаты проверки всех машин:*\n\n{final_message}",
+                           message_thread_id=thread_id)
+        else:
             vm_index = int(vm_index_str)
             if 0 <= vm_index < len(VMS):
                 vm = VMS[vm_index]
-                success, text, _, _ = trigger_vm_start(vm['url'])
+                success, text, start_initiated, _ = trigger_vm_start(vm['url'])
                 status_icon = "✅" if success else "❌"
-                bot.send_message(call.message.chat.id, f"*{vm['name']}*: {status_icon} {text}")
+                status_text = text if text else ("Запускается..." if start_initiated else "Машина работает")
+                bot.send_message(call.message.chat.id, 
+                               f"*{vm['name']}*: {status_icon} {status_text}",
+                               message_thread_id=thread_id)
             else:
-                bot.send_message(call.message.chat.id, "❌ Неверный индекс ВМ.")
-        except (ValueError, IndexError):
-            bot.send_message(call.message.chat.id, "❌ Ошибка при обработке вашего выбора.")
+                bot.send_message(call.message.chat.id, "❌ Неверный индекс ВМ.",
+                               message_thread_id=thread_id)
+    except (ValueError, IndexError) as e:
+        logger.error(f"Ошибка парсинга индекса ВМ: {e}")
+        bot.send_message(call.message.chat.id, "❌ Ошибка при обработке вашего выбора.",
+                       message_thread_id=TOPIC_ID if TOPIC_ID else None)
+    except Exception as e:
+        logger.error(f"Ошибка в handle_vm_callback: {e}")
+        logger.exception(e)
+        try:
+            bot.send_message(call.message.chat.id, "❌ Произошла ошибка при обработке команды.",
+                           message_thread_id=TOPIC_ID if TOPIC_ID else None)
+        except:
+            pass
 
     # Обновляем сообщение, чтобы убрать "часики" на кнопке
-    bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id)
+    try:
+        bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id)
+    except Exception as e:
+        logger.debug(f"Не удалось обновить markup: {e}")
 
 # --- Для запуска без Docker ---
 if __name__ == '__main__':
-    print("🤖 Бот запускается...")
-    bot.polling(non_stop=True)
+    logger.info("🤖 Бот запускается в режиме polling...")
+    try:
+        bot.polling(non_stop=True, timeout=60)
+    except Exception as e:
+        logger.critical(f"Бот остановлен: {e}")
+        logger.exception(e)

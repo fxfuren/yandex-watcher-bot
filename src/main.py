@@ -117,7 +117,9 @@ if __name__ == "__main__":
 
     logger.info("🤖 Бот запущен...")
     try:
-        bot.infinity_polling(timeout=60)
+        bot.infinity_polling(timeout=60, long_polling_timeout=60)
+    except KeyboardInterrupt:
+        logger.info("Бот остановлен пользователем (Ctrl+C)")
     except Exception as e:
-        logger.critical(f"Бот остановлен: {clean_for_log(str(e))}")
+        logger.critical(f"Бот остановлен с ошибкой: {clean_for_log(str(e))}")
         logger.exception(e)
