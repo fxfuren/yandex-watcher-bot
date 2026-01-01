@@ -10,6 +10,7 @@ def check_group(message_or_call) -> bool:
     """Проверяет, что команда вызвана из нужной группы."""
     # Определяем тип объекта (message или callback_query)
     chat_id = None
+    is_callback = False
     
     if hasattr(message_or_call, 'chat'):
         # Это message
@@ -17,13 +18,17 @@ def check_group(message_or_call) -> bool:
     elif hasattr(message_or_call, 'message'):
         # Это callback_query
         chat_id = message_or_call.message.chat.id
+        is_callback = True
     
     # Проверяем, что это именно наша группа
     if chat_id != GROUP_CHAT_ID:
         try:
-            # Если это личка или другая группа - отправляем отказ
-            bot.send_message(chat_id, "⛔️ Бот работает только в настроенной группе.",
-                           message_thread_id=TOPIC_ID if TOPIC_ID else None)
+            # Для callback обязательно нужно ответить, иначе кнопка зависнет
+            if is_callback:
+                bot.answer_callback_query(message_or_call.id, "⛔️ Бот работает только в настроенной группе.", show_alert=True)
+            else:
+                bot.send_message(chat_id, "⛔️ Бот работает только в настроенной группе.",
+                               message_thread_id=TOPIC_ID if TOPIC_ID else None)
         except Exception as e:
             logger.error(f"Ошибка при отправке сообщения об отказе в доступе: {e}")
         return False
