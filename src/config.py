@@ -59,7 +59,7 @@ def update_vms_file():
 
 # --- Инициализация ---
 BOT_TOKEN: str = get_env_var("BOT_TOKEN")
-ADMIN_ID: int = get_env_var_int("ADMIN_ID")
+GROUP_CHAT_ID: int = get_env_var_int("GROUP_CHAT_ID")
 TOPIC_ID: int = get_env_var_int("TOPIC_ID", default=None)
 CHECK_INTERVAL: int = get_env_var_int("CHECK_INTERVAL", 60)
 

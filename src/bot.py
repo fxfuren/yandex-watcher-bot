@@ -1,29 +1,28 @@
 import telebot
 from loguru import logger
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from src.config import BOT_TOKEN, ADMIN_ID, VMS, TOPIC_ID
+from src.config import BOT_TOKEN, GROUP_CHAT_ID, VMS, TOPIC_ID
 from src.client import trigger_vm_start
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
 
-def check_admin(message_or_call) -> bool:
-    """Проверяет, является ли пользователь админом."""
+def check_group(message_or_call) -> bool:
+    """Проверяет, что команда вызвана из нужной группы."""
     # Определяем тип объекта (message или callback_query)
-    user_id = None
     chat_id = None
     
-    if hasattr(message_or_call, 'from_user'):
+    if hasattr(message_or_call, 'chat'):
         # Это message
-        user_id = message_or_call.from_user.id
         chat_id = message_or_call.chat.id
     elif hasattr(message_or_call, 'message'):
         # Это callback_query
-        user_id = message_or_call.from_user.id
         chat_id = message_or_call.message.chat.id
     
-    if user_id != ADMIN_ID:
+    # Проверяем, что это именно наша группа
+    if chat_id != GROUP_CHAT_ID:
         try:
-            bot.send_message(chat_id, "⛔️ У вас нет доступа к этому боту.",
+            # Если это личка или другая группа - отправляем отказ
+            bot.send_message(chat_id, "⛔️ Бот работает только в настроенной группе.",
                            message_thread_id=TOPIC_ID if TOPIC_ID else None)
         except Exception as e:
             logger.error(f"Ошибка при отправке сообщения об отказе в доступе: {e}")
@@ -31,13 +30,13 @@ def check_admin(message_or_call) -> bool:
     return True
 
 def send_alert(message: str):
-    """Отправляет алерт администратору."""
+    """Отправляет алерт в группу."""
     try:
-        bot.send_message(ADMIN_ID, message, parse_mode="Markdown",
+        bot.send_message(GROUP_CHAT_ID, message, parse_mode="Markdown",
                          message_thread_id=TOPIC_ID if TOPIC_ID else None)
-        logger.debug(f"Алерт отправлен админу: {message[:50]}...")
+        logger.debug(f"Алерт отправлен в группу: {message[:50]}...")
     except Exception as e:
-        logger.critical(f"Не удалось отправить алерт админу: {e}")
+        logger.critical(f"Не удалось отправить алерт в группу: {e}")
         logger.exception(e)
 
 def create_vm_keyboard() -> InlineKeyboardMarkup:
@@ -51,9 +50,9 @@ def create_vm_keyboard() -> InlineKeyboardMarkup:
 
 @bot.message_handler(commands=['start', 'help'])
 def handle_start(message):
-    if not check_admin(message): return
+    if not check_group(message): return
     
-    logger.info(f"Команда /start от пользователя {message.from_user.id}")
+    logger.info(f"Команда /start от пользователя {message.from_user.id} (@{message.from_user.username})")
     thread_id = TOPIC_ID if TOPIC_ID else None
     
     try:
@@ -75,9 +74,9 @@ def handle_start(message):
 
 @bot.message_handler(commands=['ping'])
 def handle_ping(message):
-    if not check_admin(message): return
+    if not check_group(message): return
     
-    logger.info(f"Команда /ping от пользователя {message.from_user.id}")
+    logger.info(f"Команда /ping от пользователя {message.from_user.id} (@{message.from_user.username})")
     try:
         bot.reply_to(message, "🏓 Понг!", message_thread_id=TOPIC_ID if TOPIC_ID else None)
     except Exception as e:
@@ -85,10 +84,10 @@ def handle_ping(message):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('vm_'))
 def handle_vm_callback(call):
-    if not check_admin(call): return
+    if not check_group(call): return
 
     vm_index_str = call.data.split('_')[1]
-    logger.info(f"Callback от пользователя {call.from_user.id}: {call.data}")
+    logger.info(f"Callback от пользователя {call.from_user.id} (@{call.from_user.username}): {call.data}")
     
     try:
         bot.answer_callback_query(call.id, "🚀 Отправляю команду...")
