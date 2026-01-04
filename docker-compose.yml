@@ -7,3 +7,5 @@ services:
       - .env
     volumes:
       - /etc/localtime:/etc/localtime:ro
+      - ./vms.yaml:/app/vms.yaml # Для сохранения IP при перезапуске
+    stop_grace_period: 30s # Время на graceful shutdown
