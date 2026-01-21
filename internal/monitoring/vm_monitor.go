@@ -58,7 +58,8 @@ func (m *VMMonitor) Start(ctx context.Context) {
 		"url", m.vm.URL,
 	)
 
-	m.check(ctx)
+	// Run first check asynchronously to allow all monitors to start in parallel
+	go m.check(ctx)
 
 	ticker := time.NewTicker(m.getCurrentInterval())
 	defer ticker.Stop()
