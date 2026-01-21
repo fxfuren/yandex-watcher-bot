@@ -52,20 +52,19 @@ func (s VMStatus) ShouldStartVM() bool {
 // GetCheckInterval returns the recommended check interval for this status
 func (s VMStatus) GetCheckInterval(min, max time.Duration) time.Duration {
 	switch s {
-	case StatusStopped, StatusCrashed:
-		return min
-	case StatusError, StatusStarting, StatusRestarting:
-		return min * 2
-	case StatusProvisioning, StatusStopping:
-		if interval := min * 3; interval <= max {
-			return interval
-		}
-		return max
+	case StatusStopped, StatusCrashed, StatusError:
+		// Check quickly to start recovery, but not too often
+		return 5 * time.Second
+	case StatusStarting, StatusRestarting, StatusProvisioning:
+		// VM takes ~1-2 minutes to start, check every 15 seconds
+		// This reduces API calls by 75% compared to 4-second interval
+		return 15 * time.Second
+	case StatusStopping:
+		// Stopping is usually fast, check every 10 seconds
+		return 10 * time.Second
 	case StatusUpdating:
-		if interval := min * 6; interval <= max {
-			return interval
-		}
-		return max
+		// Updates take longer, check every 30 seconds
+		return 30 * time.Second
 	case StatusRunning:
 		return max
 	case StatusDeleting:

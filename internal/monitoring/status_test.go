@@ -75,20 +75,23 @@ func TestVMStatus_ShouldStartVM(t *testing.T) {
 }
 
 func TestVMStatus_GetCheckInterval(t *testing.T) {
-	min := 5 * time.Second
+	min := 2 * time.Second
 	max := 60 * time.Second
 
 	tests := []struct {
 		status   types.VMStatus
 		expected time.Duration
 	}{
-		{types.StatusStopped, min},
-		{types.StatusCrashed, min},
-		{types.StatusError, min * 2},
-		{types.StatusStarting, min * 2},
+		{types.StatusStopped, 5 * time.Second},
+		{types.StatusCrashed, 5 * time.Second},
+		{types.StatusError, 5 * time.Second},
+		{types.StatusStarting, 15 * time.Second},
+		{types.StatusRestarting, 15 * time.Second},
+		{types.StatusProvisioning, 15 * time.Second},
+		{types.StatusStopping, 10 * time.Second},
+		{types.StatusUpdating, 30 * time.Second},
 		{types.StatusRunning, max},
-		{types.StatusProvisioning, min * 3},
-		{types.StatusUpdating, min * 6},
+		{types.StatusDeleting, max},
 	}
 
 	for _, tt := range tests {

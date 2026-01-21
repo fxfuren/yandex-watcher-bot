@@ -23,7 +23,8 @@ type VMMonitor struct {
 	maxInterval     time.Duration
 	currentStatus   types.VMStatus
 	lastStatusTime  time.Time
-	lastAPICheck    time.Time  // Track last API check time
+	lastAPICheck    time.Time     // Track last API check time
+	gracePeriodUntil time.Time    // Skip checks until this time (for VM startup)
 	mu              sync.RWMutex
 	configMu        *sync.Mutex
 	ipUpdateChan    chan string
@@ -82,6 +83,21 @@ func (m *VMMonitor) check(ctx context.Context) {
 	vmName := m.vm.Name
 	currentStatus := m.getCurrentStatus()
 
+	// Skip check if we're in grace period (VM is starting up)
+	m.mu.RLock()
+	gracePeriodUntil := m.gracePeriodUntil
+	m.mu.RUnlock()
+
+	if time.Now().Before(gracePeriodUntil) {
+		timeLeft := time.Until(gracePeriodUntil).Round(time.Second)
+		logger.Info("⏸️ Grace period active, skipping check",
+			"vm", vmName,
+			"status", currentStatus,
+			"time_left", timeLeft,
+		)
+		return
+	}
+
 	logger.Info("🔍 Checking VM",
 		"vm", vmName,
 		"status", currentStatus,
@@ -103,19 +119,32 @@ func (m *VMMonitor) check(ctx context.Context) {
 				oldStatus := currentStatus
 				m.setStatus(types.StatusRunning)
 
-				logger.Info("✅ VM recovered via ping",
-					"vm", vmName,
-					"ip", knownIP,
-					"old_status", oldStatus,
-				)
+				// Clear grace period since VM is now responding
+				m.mu.Lock()
+				m.gracePeriodUntil = time.Time{}
+				m.mu.Unlock()
 
-				message := fmt.Sprintf("✅ ВОССТАНОВЛЕНИЕ: ВМ *%s* снова в строю.\n\nПроверка: Ping OK на %s", m.vm.Name, knownIP)
-				m.notifier.Enqueue(notification.Notification{
-					VMName:   m.vm.Name,
-					Status:   types.StatusRunning,
-					Message:  message,
-					Priority: notification.PriorityCritical,
-				})
+				// Only send notification if this is a real recovery (not initial startup)
+				if oldStatus != types.StatusUnknown {
+					logger.Info("✅ VM recovered via ping",
+						"vm", vmName,
+						"ip", knownIP,
+						"old_status", oldStatus,
+					)
+
+					message := fmt.Sprintf("✅ ВОССТАНОВЛЕНИЕ: ВМ *%s* снова в строю.\n\nПроверка: Ping OK на %s", m.vm.Name, knownIP)
+					m.notifier.Enqueue(notification.Notification{
+						VMName:   m.vm.Name,
+						Status:   types.StatusRunning,
+						Message:  message,
+						Priority: notification.PriorityCritical,
+					})
+				} else {
+					logger.Info("✅ VM initialized as Running",
+						"vm", vmName,
+						"ip", knownIP,
+					)
+				}
 			} else {
 				logger.Info("🏓 Ping OK",
 					"vm", vmName,
@@ -233,6 +262,11 @@ func (m *VMMonitor) handleStatusChange(ctx context.Context, newStatus types.VMSt
 	}
 
 	if newStatus == types.StatusRunning {
+		// Clear grace period since VM is now running
+		m.mu.Lock()
+		m.gracePeriodUntil = time.Time{}
+		m.mu.Unlock()
+
 		if oldStatus != types.StatusUnknown {
 			message := fmt.Sprintf("✅ ВОССТАНОВЛЕНИЕ: ВМ *%s* снова в строю.\n\nСтатус API: Running", m.vm.Name)
 			m.notifier.Enqueue(notification.Notification{
@@ -308,8 +342,15 @@ func (m *VMMonitor) startVM(ctx context.Context) {
 				"vm", vmName,
 			)
 		} else {
+			// VM is starting - set grace period to avoid unnecessary API calls
+			gracePeriod := 60 * time.Second
+			m.mu.Lock()
+			m.gracePeriodUntil = time.Now().Add(gracePeriod)
+			m.mu.Unlock()
+
 			logger.Info("🚀 VM start initiated",
 				"vm", vmName,
+				"grace_period", gracePeriod,
 			)
 
 			message := fmt.Sprintf("🚀 Автозапуск: ВМ *%s* запускается через API.", vmName)
