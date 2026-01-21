@@ -16,39 +16,39 @@ import (
 
 // VMMonitor manages monitoring for a single VM
 type VMMonitor struct {
-	vm              *config.VM
-	client          *client.YandexClient
-	notifier        *notification.NotificationQueue
-	minInterval     time.Duration
-	maxInterval     time.Duration
-	currentStatus   types.VMStatus
-	lastStatusTime  time.Time
-	lastAPICheck    time.Time     // Track last API check time
-	gracePeriodUntil time.Time    // Skip checks until this time (for VM startup)
-	mu              sync.RWMutex
-	configMu        *sync.Mutex
-	ipUpdateChan    chan string
+	vm               *config.VM
+	client           *client.YandexClient
+	notifier         *notification.NotificationQueue
+	minInterval      time.Duration
+	maxInterval      time.Duration
+	currentStatus    types.VMStatus
+	lastStatusTime   time.Time
+	lastAPICheck     time.Time // Track last API check time
+	gracePeriodUntil time.Time // Skip checks until this time (for VM startup)
+	mu               sync.RWMutex
+	configMu         *sync.Mutex
+	ipUpdateChan     chan string
 }
 
 // NewVMMonitor creates a new VM monitor
 func NewVMMonitor(
 	vm *config.VM,
-	client          *client.YandexClient,
-	notifier        *notification.NotificationQueue,
+	client *client.YandexClient,
+	notifier *notification.NotificationQueue,
 	minInterval, maxInterval time.Duration,
-	configMu        *sync.Mutex,
-	ipUpdateChan    chan string,
+	configMu *sync.Mutex,
+	ipUpdateChan chan string,
 ) *VMMonitor {
 	return &VMMonitor{
-		vm:              vm,
-		client:          client,
-		notifier:        notifier,
-		minInterval:     minInterval,
-		maxInterval:     maxInterval,
-		currentStatus:   types.StatusUnknown,
-		lastStatusTime:  time.Now(),
-		configMu:        configMu,
-		ipUpdateChan:    ipUpdateChan,
+		vm:             vm,
+		client:         client,
+		notifier:       notifier,
+		minInterval:    minInterval,
+		maxInterval:    maxInterval,
+		currentStatus:  types.StatusUnknown,
+		lastStatusTime: time.Now(),
+		configMu:       configMu,
+		ipUpdateChan:   ipUpdateChan,
 	}
 }
 
@@ -56,7 +56,6 @@ func NewVMMonitor(
 func (m *VMMonitor) Start(ctx context.Context) {
 	logger.Info("Starting VM monitor",
 		"vm", m.vm.Name,
-		"url", m.vm.URL,
 	)
 
 	// Run first check asynchronously to allow all monitors to start in parallel
