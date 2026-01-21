@@ -1,7 +1,5 @@
-version: '3.8'
-
 services:
-  watchdog:
+  yandex-watchdog:
     build:
       context: .
       dockerfile: Dockerfile
@@ -15,12 +13,12 @@ services:
       - /etc/localtime:/etc/localtime:ro
     stop_grace_period: 15s
     logging:
-      driver: "json-file"
+      driver: 'json-file'
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: '10m'
+        max-file: '3'
     healthcheck:
-      test: ["CMD", "pgrep", "-x", "watchdog"]
+      test: ['CMD', 'pgrep', '-x', 'watchdog']
       interval: 30s
       timeout: 10s
       retries: 3
