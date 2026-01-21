@@ -1,11 +1,25 @@
 services:
-  watchdog:
-    build: .
-    container_name: yandex-watcher-bot
-    restart: always
+  yandex-watchdog:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: yandex-watchdog:latest
+    container_name: yandex-watchdog
+    restart: unless-stopped
     env_file:
       - .env
     volumes:
+      - ./vms.yaml:/app/vms.yaml
       - /etc/localtime:/etc/localtime:ro
-      - ./vms.yaml:/app/vms.yaml # Для сохранения IP при перезапуске
-    stop_grace_period: 30s # Время на graceful shutdown
+    stop_grace_period: 15s
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+    healthcheck:
+      test: ['CMD', 'pgrep', '-x', 'watchdog']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s

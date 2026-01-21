@@ -89,3 +89,5 @@ instance/
 vms.yaml
 vms.json
 vms.yml
+
+.claude 

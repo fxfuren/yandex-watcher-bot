@@ -1,18 +1,25 @@
-# Используем легкий официальный образ Python
-FROM python:3.12
+# Build stage
+FROM golang:1.25-alpine AS builder
 
-# Отключаем буферизацию вывода (чтобы логи сразу видны были)
-ENV PYTHONUNBUFFERED=1
+WORKDIR /build
 
-# Рабочая директория внутри контейнера
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o watchdog ./cmd/watchdog
+
+# Runtime stage
+FROM alpine:3.19
+
+RUN apk add --no-cache ca-certificates tzdata iputils && \
+    adduser -D -u 1000 watchdog
+
 WORKDIR /app
 
-# Копируем зависимости и устанавливаем их
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY --from=builder /build/watchdog .
+COPY vms.yaml .
 
-# Копируем весь код
-COPY . .
+USER watchdog
 
-# Команда запуска (модульный запуск через -m)
-CMD ["python", "-m", "src.main"]
+CMD ["./watchdog"]
