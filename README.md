@@ -1,329 +1,452 @@
-# 🚀 Yandex VM Watchdog Bot (Go Edition)
+# 🤖 Yandex VM Watchdog Bot
 
-High-performance, concurrent VM monitoring bot rewritten in Go for **sub-10-second reaction times**.
+Автоматический мониторинг и восстановление виртуальных машин Yandex Cloud с уведомлениями в Telegram.
 
-## 🎯 Key Improvements Over Python Version
+[![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go)](https://golang.org)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat&logo=docker)](https://www.docker.com/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-### Performance
-- **⚡ 12-15x faster reaction time**: 5-15s vs 60-300s
-- **🔄 True parallelism**: Each VM monitored in independent goroutine
-- **📊 Dynamic intervals**: Critical VMs checked every 5s, stable VMs every 60s
-- **🎯 Non-blocking I/O**: All network operations with context and timeouts
+---
 
-### Architecture
-- **Per-VM goroutines**: Each VM has independent monitoring loop
-- **Worker pool**: Rate-limited API calls to prevent overwhelming Yandex Cloud
-- **Priority queue**: Critical alerts sent immediately
-- **Deduplication**: Prevents alert spam
+## ✨ Возможности
 
-### Resource Efficiency
-- **💾 Low memory**: ~20-50MB for 50 VMs (vs 200MB+ for Python)
-- **🔋 Low CPU**: Native compiled binary, no interpreter overhead
-- **📦 Small image**: ~15MB Docker image (vs 200MB+ for Python)
+- 🔍 **Ping First Strategy** - 90% экономия API запросов
+- ⏸️ **Grace Period** - 85% сокращение запросов при запуске VM
+- 🚀 **Параллельный мониторинг** - все VM проверяются одновременно
+- ⚡ **Автозапуск** - автоматическое восстановление упавших VM
+- 📱 **Telegram уведомления** - мгновенные алерты о состоянии
+- 🐳 **Docker ready** - запуск в один клик
+- 🔒 **Безопасность** - non-root пользователь, минимальный образ
 
-## 📊 Status-Based Check Intervals
+---
 
-| Status | Interval | Rationale |
-|--------|----------|-----------|
-| Stopped/Crashed | **5s** | Critical - immediate action needed |
-| Error | **10s** | High priority monitoring |
-| Starting/Restarting | **10s** | Monitor startup progress |
-| Provisioning | **15s** | Resource allocation in progress |
-| Running | **60s** | Stable - less frequent checks OK |
-| Updating | **30s** | Monitor update progress |
+## 🚀 Быстрый старт
 
-## 🚀 Quick Start
+### Docker (рекомендуется)
 
-### Prerequisites
-- Docker & Docker Compose
-- Go 1.22+ (for local development)
-
-### Using Docker (Recommended)
-
-1. **Build and run**:
 ```bash
-docker-compose -f docker-compose.go.yml up -d
+# 1. Клонируйте репозиторий
+git clone https://github.com/your/yandex-watcher-bot.git
+cd yandex-watcher-bot
+
+# 2. Настройте конфигурацию
+cp .env.example .env
+nano .env  # Добавьте BOT_TOKEN и CHAT_ID
+
+# 3. Настройте VM
+nano vms.yaml  # Добавьте ваши VM
+
+# 4. Запустите
+docker-compose up -d
+
+# 5. Смотрите логи
+docker-compose logs -f
 ```
 
-2. **View logs**:
-```bash
-docker-compose -f docker-compose.go.yml logs -f watchdog-go
-```
+### Локально
 
-3. **Stop**:
 ```bash
-docker-compose -f docker-compose.go.yml down
-```
-
-### Local Development
-
-1. **Install dependencies**:
-```bash
+# Установите зависимости
 go mod download
-```
 
-2. **Build**:
-```bash
+# Соберите
 go build -o watchdog ./cmd/watchdog
-```
 
-3. **Run**:
-```bash
+# Запустите
 ./watchdog
 ```
 
-## ⚙️ Configuration
+---
 
-### Environment Variables
+## 📋 Конфигурация
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `BOT_TOKEN` | *required* | Telegram bot token |
-| `GROUP_CHAT_ID` | *required* | Telegram group ID |
-| `TOPIC_ID` | - | Telegram topic ID (optional) |
-| `MIN_CHECK_INTERVAL` | `5s` | Minimum check interval (critical statuses) |
-| `MAX_CHECK_INTERVAL` | `60s` | Maximum check interval (stable statuses) |
-| `API_WORKER_POOL_SIZE` | `10` | Max concurrent API calls |
-| `TELEGRAM_WORKERS` | `3` | Telegram notification workers |
+### .env файл
 
-**Note**: Intervals can be specified as duration strings (e.g., "5s", "1m") or seconds (e.g., "60").
+```bash
+# Telegram
+BOT_TOKEN=7958844485:AAHMFXxxxxxxxxxxxxxxxxxxxxxxxx
+CHAT_ID=-1002279050000
+TOPIC_ID=2  # Опционально для топиков
 
-### VM Configuration (vms.yaml)
+MIN_CHECK_INTERVAL=3s
+MAX_CHECK_INTERVAL=59s
+```
+
+### vms.yaml файл
 
 ```yaml
+telegram_workers: 3
+
 vms:
-  - name: 'ru-ya-01'
-    url: 'https://your-api-gateway.apigw.yandexcloud.net'
-    ip: 51.250.10.174  # Auto-discovered and saved
+  - name: ru-ya-01
+    url: https://xxxxx.apigw.yandexcloud.net
+    ip: 51.250.100.105 # Определяется автоматически
+
+  - name: ru-ya-02
+    url: https://yyyyy.apigw.yandexcloud.net
+    ip: 51.250.108.169
 ```
 
-## 🏗️ Architecture
+---
+
+## 🎯 Как это работает
+
+### 1. Ping First Strategy (90% экономия API)
 
 ```
-┌────────────────────────────────────┐
-│     Main Coordinator               │
-│  (manages VM goroutines)           │
-└────────┬───────────────────────────┘
+┌─────────────────────────────────────────┐
+│ VM работает нормально                   │
+├─────────────────────────────────────────┤
+│ 1. Ping OK → Skip API ✅                │
+│ 2. Повторяется каждые 60 секунд        │
+│ 3. API используется: 0 запросов/час    │
+└─────────────────────────────────────────┘
+
+┌─────────────────────────────────────────┐
+│ VM упала                                │
+├─────────────────────────────────────────┤
+│ 1. Ping FAIL → API запрос ⚠️           │
+│ 2. API используется: только при проблемах│
+└─────────────────────────────────────────┘
+```
+
+### 2. Grace Period (85% экономия при запуске)
+
+После запуска VM система ждет 60 секунд перед проверками:
+
+```
+10:00:00  Ping fails → API (Stopped) → Start VM
+10:00:01  Grace period установлен (60 секунд)
+10:00:05  ⏸️ Пропуск проверки (55s осталось)
+10:00:20  ⏸️ Пропуск проверки (40s осталось)
+10:00:40  ⏸️ Пропуск проверки (20s осталось)
+10:01:00  Ping OK ✅ VM восстановлена
+
+Результат: 1 API запрос вместо 6-8
+```
+
+### 3. Параллельный мониторинг
+
+Все VM проверяются одновременно:
+
+```go
+for _, vm := range vms {
+    go monitor.Start(vm)  // Каждая VM в своей горутине
+}
+```
+
+**Преимущества:**
+
+- Одновременное обнаружение проблем
+- Параллельный запуск упавших VM
+- Нет задержек между проверками
+
+### 4. Интервалы проверки
+
+| Состояние       | Интервал | Обоснование                 |
+| --------------- | -------- | --------------------------- |
+| Running         | 60s      | Стабильное, редкие проверки |
+| Stopped/Crashed | 5s       | Критично, быстро запустить  |
+| Starting        | 15s      | VM долго загружается        |
+| Provisioning    | 15s      | Подготовка ресурсов         |
+| Stopping        | 10s      | Обычно быстрая операция     |
+| Updating        | 30s      | Долгая операция             |
+
+---
+
+## 📊 Статистика
+
+### API запросы в месяц
+
+**Оптимальный сценарий** (все VM стабильны):
+
+- API запросов: **~0/месяц** ✅
+- Ping проверок: ~130,000/месяц (бесплатно)
+
+**Реалистичный сценарий** (1 падение/день/VM):
+
+- Падений: 3 VM × 30 дней = 90 инцидентов
+- API за инцидент: ~1-2 (с Grace Period)
+- **Итого: ~100-200 API/месяц** из 100,000 лимита ✅
+
+### Время восстановления
+
+```
+Обнаружение падения:    5-60 секунд
+Команда запуска:        1-3 секунды
+Загрузка VM:            60-120 секунд
+Grace Period:           60 секунд (без лишних проверок)
+────────────────────────────────────────────
+Total:                  ~2-3 минуты
+```
+
+---
+
+## 🐳 Docker
+
+### Запуск
+
+```bash
+docker-compose up -d       # Запустить
+docker-compose down        # Остановить
+docker-compose restart     # Перезапустить
+docker-compose logs -f     # Логи
+docker-compose ps          # Статус
+```
+
+### Особенности
+
+- ✅ Автоперезапуск при падении
+- ✅ Health checks каждые 30 сек
+- ✅ Ротация логов (10MB × 3 = 30MB макс)
+- ✅ Graceful shutdown (15 сек)
+- ✅ Минимальный образ (~20MB)
+- ✅ Non-root пользователь
+
+### Обновление
+
+```bash
+docker-compose down
+git pull
+docker-compose build
+docker-compose up -d
+```
+
+Подробнее: [DOCKER.md](DOCKER.md)
+
+---
+
+## 📱 Telegram уведомления
+
+### Типы уведомлений
+
+1. **Сбой VM**
+
+   ```
+   🚨 СБОЙ: ВМ ru-ya-01 недоступна.
+   Статус: Stopped
+   ```
+
+2. **Автозапуск**
+
+   ```
+   🚀 Автозапуск: ВМ ru-ya-01 запускается через API.
+   ```
+
+3. **Восстановление**
+
+   ```
+   ✅ ВОССТАНОВЛЕНИЕ: ВМ ru-ya-01 снова в строю.
+   Проверка: Ping OK на 51.250.100.105
+   ```
+
+4. **Застревание в состоянии**
+   ```
+   ⚠️ ВНИМАНИЕ: ВМ ru-ya-01 застряла в статусе Starting более 5m
+   ```
+
+### Настройка Telegram
+
+1. Создайте бота через [@BotFather](https://t.me/botfather)
+2. Получите `BOT_TOKEN`
+3. Добавьте бота в группу
+4. Получите `CHAT_ID`:
+   ```bash
+   curl https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates
+   ```
+5. Добавьте в `.env`
+
+---
+
+## 🔧 Troubleshooting
+
+### Контейнер не запускается
+
+```bash
+# Проверьте логи
+docker-compose logs
+
+# Проверьте конфиг
+docker-compose config
+
+# Пересоберите
+docker-compose down
+docker-compose build
+docker-compose up -d
+```
+
+### Telegram не работает
+
+```bash
+# Проверьте переменные
+docker exec yandex-watchdog env | grep BOT_TOKEN
+
+# Проверьте сеть
+docker exec yandex-watchdog ping -c 3 api.telegram.org
+
+# Проверьте токен
+curl https://api.telegram.org/bot<YOUR_TOKEN>/getMe
+```
+
+### Permission denied для vms.yaml
+
+```bash
+# Исправьте права на хосте
+chown 1000:1000 vms.yaml
+# или
+chmod 666 vms.yaml
+```
+
+### Ping не работает
+
+Добавьте capability в docker-compose.yml:
+
+```yaml
+cap_add:
+  - NET_RAW
+```
+
+---
+
+## 🏗️ Архитектура
+
+```
+┌──────────────────────────────────────────┐
+│            Coordinator                   │
+│     (управляет мониторами)              │
+└────────┬─────────────────────────────────┘
          │
-    ┌────┴─────┬──────────┬──────────┐
-    │          │          │          │
-┌───▼───┐  ┌──▼───┐  ┌───▼───┐  ┌───▼───┐
-│ VM-1  │  │ VM-2 │  │ VM-3  │  │ VM-N  │
-│Monitor│  │Monitor│  │Monitor│  │Monitor│
-└───┬───┘  └──┬───┘  └───┬───┘  └───┬───┘
+    ┌────┴────┬──────────┬──────────┐
     │         │          │          │
-    └─────────┴──────────┴──────────┘
-              │
-    ┌─────────┴──────────┐
-    │                    │
-┌───▼────────┐    ┌──────▼─────────┐
-│ API Worker │    │   Notification  │
-│   Pool     │    │     Queue       │
-│ (10 workers)│   │  (3 workers)    │
-└────────────┘    └────────────────┘
+┌───▼───┐ ┌──▼───┐ ┌────▼────┐ ┌───▼───┐
+│VM-1   │ │VM-2  │ │  VM-3   │ │ VM-N  │
+│Monitor│ │Monitor│ │ Monitor │ │Monitor│
+└───┬───┘ └──┬───┘ └────┬────┘ └───┬───┘
+    │        │           │          │
+    └────────┴───────────┴──────────┘
+             │           │
+    ┌────────▼───┐  ┌───▼──────────┐
+    │  Yandex    │  │  Telegram    │
+    │  Cloud API │  │  Notifier    │
+    └────────────┘  └──────────────┘
 ```
 
-### Key Components
+### Ключевые компоненты
 
-1. **Coordinator**: Spawns and manages VM monitor goroutines
-2. **VM Monitor**: Independent monitoring loop for each VM
-3. **API Client**: Rate-limited Yandex Cloud API client
-4. **Notification Queue**: Prioritized, deduplicated alerts
-5. **Worker Pool**: Bounds concurrent API calls
+- **Coordinator** - управляет мониторами VM
+- **VMMonitor** - мониторинг одной VM (горутина)
+- **YandexClient** - взаимодействие с API
+- **NotificationQueue** - очередь уведомлений
+- **Grace Period** - умная оптимизация запросов
 
-## 📈 Performance Comparison
+---
 
-### Python (Old)
+## 📈 Сравнение с Python версией
+
+### Python (старая версия)
+
 ```
-Check interval: Fixed 60s
-VM checks: Sequential (1 at a time)
-Reaction time: 60-300s average
-
-Timeline:
-[0s] -------- [60s] Check starts
-             [65s] VM-1 check (5s)
-             [70s] VM-2 check (5s)
-             [75s] VM-3 check (5s)
-[120s] ------ Next cycle
-
-Result: 60s base + (N VMs × 5s) delay
+✗ Последовательные проверки (1 VM за раз)
+✗ Фиксированный интервал 60 секунд
+✗ API запросы при каждой проверке
+✗ Нет Grace Period
+✗ Время реакции: 60-300 секунд
+✗ Потребление памяти: 200MB+
 ```
 
-### Go (New)
+### Go (текущая версия)
+
 ```
-Check interval: Dynamic 5-60s
-VM checks: Parallel (all at once)
-Reaction time: 5-15s average
-
-Timeline:
-[0s] All VMs check simultaneously
-[5s] Critical VM checks again
-[10s] Critical VM checks again
-[60s] Stable VMs check again
-
-Result: 5s for critical, 60s for stable
+✓ Параллельные проверки (все VM сразу)
+✓ Динамические интервалы (5-60 секунд)
+✓ Ping First Strategy (90% экономия API)
+✓ Grace Period (85% экономия при запуске)
+✓ Время реакции: 5-15 секунд
+✓ Потребление памяти: ~20MB
 ```
 
-**Improvement: 12-15x faster for critical statuses**
+**Улучшение: 12-15x быстрее, 90% меньше API запросов**
 
-## 🛡️ Error Handling
+---
 
-### Retry Logic
-- Exponential backoff: 1s → 2s → 4s → 8s → 16s
-- Max 3-5 retries depending on operation
-- Context-aware cancellation
+## 🧪 Разработка
 
-### Graceful Degradation
-- Single VM failure doesn't affect others
-- API unavailable: Uses cached status
-- Telegram unavailable: Queues alerts in memory
+### Структура проекта
 
-### Graceful Shutdown
-1. Receive SIGTERM/SIGINT
-2. Cancel context for all goroutines
-3. Wait up to 10s for clean shutdown
-4. Save pending IP updates
-5. Exit
-
-## 🧪 Testing
-
-### Run all tests
-```bash
-go test ./...
-```
-
-### Run with race detector
-```bash
-go test -race ./...
-```
-
-### Run specific package
-```bash
-go test -v ./internal/monitoring
-```
-
-### Check for goroutine leaks
-```bash
-go test -v -count=100 ./internal/monitoring
-```
-
-## 🔍 Monitoring & Observability
-
-### Structured Logging
-```
-[2024-01-21 10:30:45] INFO: Starting VM monitor vm=ru-ya-01 url=https://...
-[2024-01-21 10:30:50] ERROR: VM in critical status vm=ru-ya-01 status=Stopped
-[2024-01-21 10:30:51] INFO: Attempting to start VM vm=ru-ya-01
-[2024-01-21 10:30:52] INFO: VM start initiated vm=ru-ya-01
-```
-
-### Metrics (Future)
-- VM check duration (p50, p95, p99)
-- API call latency
-- Goroutine count (stability check)
-- Memory usage
-
-## 🐛 Troubleshooting
-
-### High memory usage
-```bash
-# Check goroutine count
-curl http://localhost:6060/debug/pprof/goroutine
-
-# Should be stable: ~(N_VMs + workers + coordinator)
-# Expected: 10 VMs = ~25 goroutines
-```
-
-### Slow reaction times
-```bash
-# Check logs for API latency
-docker-compose -f docker-compose.go.yml logs -f | grep "Failed to"
-
-# Increase worker pool if API is slow
-API_WORKER_POOL_SIZE=20 docker-compose -f docker-compose.go.yml up -d
-```
-
-### Config not saving
-```bash
-# Ensure volume is mounted correctly
-docker inspect yandex-watcher-bot-go | grep vms.yaml
-
-# Check file permissions
-ls -la vms.yaml
-```
-
-## 📝 Development
-
-### Project Structure
 ```
 .
 ├── cmd/
 │   └── watchdog/
 │       └── main.go              # Entry point
 ├── internal/
-│   ├── config/                  # Configuration
-│   ├── monitoring/              # VM monitoring logic
 │   ├── client/                  # Yandex Cloud API
-│   ├── network/                 # Network utilities
-│   ├── notification/            # Telegram alerts
-│   └── workerpool/              # Worker pool
+│   ├── config/                  # Конфигурация
+│   ├── monitoring/              # Логика мониторинга
+│   │   ├── coordinator.go       # Координатор
+│   │   ├── vm_monitor.go        # Монитор VM
+│   │   └── status.go            # Состояния VM
+│   ├── network/                 # Ping утилиты
+│   ├── notification/            # Telegram алерты
+│   └── types/                   # Типы данных
 ├── pkg/
-│   └── logger/                  # Logging utilities
-├── go.mod
-├── go.sum
-├── Dockerfile.go
-├── docker-compose.go.yml
-└── README.go.md
+│   └── logger/                  # Логирование
+├── Dockerfile                   # Docker образ
+├── docker-compose.yml           # Docker Compose
+└── vms.yaml                     # Конфигурация VM
 ```
 
-### Adding New Features
+### Тесты
 
-1. **New status type**: Add to `internal/monitoring/status.go`
-2. **New API endpoint**: Extend `internal/client/yandex.go`
-3. **New notification type**: Extend `internal/notification/queue.go`
+```bash
+# Все тесты
+go test ./...
 
-## 🚀 Deployment
+# С race detector
+go test -race ./...
 
-### Production Recommendations
-- Set `MIN_CHECK_INTERVAL=5s` for critical VMs
-- Set `MAX_CHECK_INTERVAL=60s` for stable VMs
-- Use `API_WORKER_POOL_SIZE=10-20` based on VM count
-- Monitor goroutine count (should be stable)
-- Set up log aggregation (ELK, Loki, etc.)
+# Конкретный пакет
+go test -v ./internal/monitoring
 
-### Resource Limits
-```yaml
-# docker-compose.go.yml
-services:
-  watchdog-go:
-    deploy:
-      resources:
-        limits:
-          memory: 100M
-          cpus: '0.5'
+# Бенчмарки
+go test -bench=. ./internal/monitoring
 ```
-
-## 📊 Benchmarks
-
-### Local Testing Results
-- **50 VMs**: 45-55 goroutines, 35MB memory
-- **100 VMs**: 105-115 goroutines, 55MB memory
-- **Reaction time (Stopped → Alert)**: 5-8 seconds
-- **Reaction time (Running → Alert)**: 60-65 seconds
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature/amazing-feature`
-3. Run tests: `go test -race ./...`
-4. Commit changes: `git commit -m 'Add amazing feature'`
-5. Push to branch: `git push origin feature/amazing-feature`
-6. Open Pull Request
-
-## 📄 License
-
-MIT License - use freely for your projects!
 
 ---
 
-**Built with ❤️ and Go for maximum performance and reliability**
+## 📚 Документация
+
+- [TECHNICAL_DOCS.md](TECHNICAL_DOCS.md) - Подробная техническая документация
+- [DOCKER.md](DOCKER.md) - Docker setup и troubleshooting
+
+---
+
+## 🤝 Вклад в проект
+
+1. Fork репозиторий
+2. Создайте feature branch (`git checkout -b feature/amazing`)
+3. Запустите тесты (`go test -race ./...`)
+4. Commit изменения (`git commit -m 'Add feature'`)
+5. Push в branch (`git push origin feature/amazing`)
+6. Откройте Pull Request
+
+---
+
+## 📄 Лицензия
+
+MIT License - используйте свободно!
+
+---
+
+## 🎯 Roadmap
+
+- [ ] Prometheus метрики
+- [ ] Web dashboard
+- [ ] Поддержка других облачных провайдеров
+- [ ] Slack интеграция
+- [ ] Adaptive Grace Period на основе истории
+
+---
+
+**Сделано с ❤️ на Go для максимальной производительности**
+
+⭐ Поставьте звезду, если проект был полезен!
