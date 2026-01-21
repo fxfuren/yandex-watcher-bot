@@ -1,18 +1,27 @@
+version: '3.8'
+
 services:
-  watchdog-go:
+  watchdog:
     build:
       context: .
-      dockerfile: Dockerfile.go
-    container_name: yandex-watcher-bot-go
-    restart: always
+      dockerfile: Dockerfile
+    image: yandex-watchdog:latest
+    container_name: yandex-watchdog
+    restart: unless-stopped
     env_file:
       - .env
-    environment:
-      - MIN_CHECK_INTERVAL=5s
-      - MAX_CHECK_INTERVAL=60s
-      - API_WORKER_POOL_SIZE=10
-      - TELEGRAM_WORKERS=3
     volumes:
+      - ./vms.yaml:/app/vms.yaml
       - /etc/localtime:/etc/localtime:ro
-      - ./vms.yaml:/app/vms.yaml # For saving IP updates
-    stop_grace_period: 15s # Time for graceful shutdown
+    stop_grace_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "pgrep", "-x", "watchdog"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
