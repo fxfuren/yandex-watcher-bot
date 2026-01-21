@@ -1,11 +1,18 @@
 services:
-  watchdog:
-    build: .
-    container_name: yandex-watcher-bot
+  watchdog-go:
+    build:
+      context: .
+      dockerfile: Dockerfile.go
+    container_name: yandex-watcher-bot-go
     restart: always
     env_file:
       - .env
+    environment:
+      - MIN_CHECK_INTERVAL=5s
+      - MAX_CHECK_INTERVAL=60s
+      - API_WORKER_POOL_SIZE=10
+      - TELEGRAM_WORKERS=3
     volumes:
       - /etc/localtime:/etc/localtime:ro
-      - ./vms.yaml:/app/vms.yaml # Для сохранения IP при перезапуске
-    stop_grace_period: 30s # Время на graceful shutdown
+      - ./vms.yaml:/app/vms.yaml # For saving IP updates
+    stop_grace_period: 15s # Time for graceful shutdown
