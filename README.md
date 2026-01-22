@@ -26,7 +26,7 @@
 
 ```bash
 # 1. Клонируйте репозиторий
-git clone https://github.com/your/yandex-watcher-bot.git
+git clone https://github.com/fxfuren/yandex-watcher-bot.git
 cd yandex-watcher-bot
 
 # 2. Настройте конфигурацию
